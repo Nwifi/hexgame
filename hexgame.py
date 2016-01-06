@@ -17,7 +17,7 @@ szMem = 12
 szBlock = 64
 szReg = 4
 ipFov = 8
-nSteps = 16
+nSteps = 1
 nTokens= 8
 
 maxCol = 16
@@ -65,7 +65,11 @@ def printMem(plId):
     scr.move(0, 8)
     for i in range(maxCol):
         scr.addstr('%02x ' % i)
-    scr.addstr('\tREGS: ')
+    scr.move(0, maxCol*3+22)
+    for i in ['BP']:
+        scr.addstr(i)
+    scr.move(1, maxCol*3+16)
+    scr.addstr('REGS: ')
     for reg in regs:
         scr.addstr('%02x  ' % reg)
     scr.move(2, 0)
@@ -126,6 +130,7 @@ def run(plId):
     for ip in (i for i in ips if i.owner == plId):
         try:
             for i in range(nSteps):
+                runByte(plId, ip)
                 if ip.pos[1]+1 == szBlock:
                     if ip.pos[0]+1 == szMem:
                         raise IpDeadError
@@ -133,7 +138,6 @@ def run(plId):
                         ip.pos = (ip.pos[0]+1, 0)
                 else:
                     ip.pos = (ip.pos[0], ip.pos[1]+1)
-                runByte(plId, ip)
         except IpDeadError:
             ipDead = True
         else:
@@ -162,28 +166,44 @@ def runByte(plId, ip):
     plMem = player.mem
     byte = mem[ip.pos[0]][ip.pos[1]]
     if byte == 0x10: #MOV REG, IM
-        if ip.pos[1]+1 == szBlock:
-            if ip.pos[0]+1 == szMem:
-                raise IpDeadError
-            r = mem[ip.pos[0]+1][0]
-            im = mem[ip.pos[0]+1][1]
-            mvIpTo = (ip.pos[0]+1, 1)
-        elif ip.pos[1]+2 == szBlock:
-            if ip.pos[0]+1 == szMem:
-                raise IpDeadError
-            r = mem[ip.pos[0]][ip.pos[1]+1]
-            im = mem[ip.pos[0]+1][0]
-            mvIpTo = (ip.pos[0]+1, 0)
-        else:
-            r = mem[ip.pos[0]][ip.pos[1]+1]
-            im = mem[ip.pos[0]][ip.pos[1]+2]
-            mvIpTo = (ip.pos[0], ip.pos[1]+2)
+        (r, im), mvIpTo = readBytes([], ip.pos, 2)
         if r+1 >= szReg:
             raise IpDeadError
         regs[r] = im
         ip.pos = mvIpTo
+    if byte == 0x11: #MOV REG, REG
+        (r1, r2), mvIpTo = readBytes([], ip.pos, 2)
+        if r1+1 >= szReg or r2+1 >= szReg:
+            raise IpDeadError
+        regs[r1] = regs[r2]
+        ip.pos = mvIpTo
+    if byte == 0x12: #MOV REG, MEM
+        (r, mh, ml), mvIpTo = readBytes([], ip.pos, 3)
+        m = mh*0x100+ml
+        if r+1 >= szReg or m+1 >= szMem*szBlock:
+            raise IpDeadError
+        regs[r] = mem[m // szBlock][m % szBlock]
+        ip.pos = mvIpTo
+    if byte == 0x13: #MOV REG, *REG
+        (r1, r2), mvIpTo = readBytes([], ip.pos, 2)
+        m = regs[0]*0x100+regs[r2] #rBP + rN
+        regs[r1] = mem[m // szBlock][m % szBlock]
+        ip.pos = mvIpTo
     else:
         pass
+
+def readBytes(b, pos, n):
+    if pos[1]+1 == szBlock:
+        if pos[0]+1 == szMem:
+            raise IpDeadError
+        pos = (pos[0]+1, 0)
+    else:
+        pos = (pos[0], pos[1]+1)
+    b.append(mem[pos[0]][pos[1]])
+    n-=1
+    if n == 0:
+        return b, pos
+    return readBytes(b, pos, n)
 
 def turn(plId):
     player = players[plId]
@@ -239,9 +259,8 @@ def turn(plId):
                 runCmd(r, curs, plId)
             except:
                 pass #TODO: Add some colourful err msg
-            else:
-                printMem(plId)
-                printUI(plId)
+            printMem(plId)
+            printUI(plId)
             curses.noecho()
             scr.addstr(cmdyx[0], cmdyx[1], '\n')
             scr.deleteln()
