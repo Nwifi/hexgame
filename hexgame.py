@@ -20,6 +20,16 @@ EQUAL = 0b010
 GREATER = 0b100
 JMP = 0b111
 
+OP_WORD_SHIFT = 0x10
+OP_WORD_SHIFT_SMALL = 0x03
+OP_INDIRECT_SHIFT_SRC = 0x04
+OP_IMMEDIATE_SHIFT_SRC = 0x04
+OP_INDIRECT_SHIFT_DST = 0x02
+OP_REGISTER_SHIFT_DST = 0x01
+OP_INDIRECT_SHIFT_SMALL = 0x01
+OP_IMMEDIATE_SHIFT_SMALL = 0x01
+
+OP_MOV = 0x10
 OP_MOV_R_I = 0x10
 OP_MOV_R_R = 0x11
 OP_MOV_R_IP = 0x12
@@ -45,6 +55,7 @@ OP_MOV_IP_R2 = 0x29
 OP_MOV_IP_IP2 = 0x2a
 OP_MOV_IP_RP2 = 0x2b
 
+OP_ADD = 0x30
 OP_ADD_R_I = 0x30
 OP_ADD_R_R = 0x31
 OP_ADD_R_IP = 0x32
@@ -70,6 +81,7 @@ OP_ADD_IP_R2 = 0x49
 OP_ADD_IP_IP2 = 0x4a
 OP_ADD_IP_RP2 = 0x4b
 
+OP_SUB = 0x50
 OP_SUB_R_I = 0x50
 OP_SUB_R_R = 0x51
 OP_SUB_R_IP = 0x52
@@ -95,6 +107,7 @@ OP_SUB_IP_R2 = 0x69
 OP_SUB_IP_IP2 = 0x6a
 OP_SUB_IP_RP2 = 0x6b
 
+OP_CMP = 0x70
 OP_CMP_R_I = 0x70
 OP_CMP_R_R = 0x71
 OP_CMP_R_IP = 0x72
@@ -128,6 +141,7 @@ OP_JNE = 0x94
 OP_JLE = 0x95
 OP_JGE = 0x96
 
+OP_INC = 0xa0
 OP_INC_R = 0xa0
 OP_INC_RP = 0xa1
 OP_INC_IP = 0xa2
@@ -135,6 +149,7 @@ OP_INC_R2 = 0xa3
 OP_INC_RP2 = 0xa4
 OP_INC_IP2 = 0xa5
 
+OP_DEC = 0xb0
 OP_DEC_R = 0xb0
 OP_DEC_RP = 0xb1
 OP_DEC_IP = 0xb2
@@ -147,11 +162,19 @@ szBlock = 64
 szReg = 8
 ipFov = 8
 nSteps = 1
-nTokens= 8
+nTokens= 16
 
 maxCol = 16
 
 class NotByteError(Exception):
+    def __init__(self):
+        pass
+
+class UnknownInstruction(Exception):
+    def __init__(self):
+        pass
+
+class TooFewTokens(Exception):
     def __init__(self):
         pass
 
@@ -847,7 +870,7 @@ def turn(plId):
             try:
                 runCmd(r, curs, plId)
             except:
-                pass #TODO: Add some colourful err msg
+                raise #TODO: Add some colourful err msg
             printMem(plId)
             printUI(plId)
             curses.noecho()
@@ -857,15 +880,127 @@ def turn(plId):
 
 def runCmd(r, curs, plId):
     player = players[plId]
+    cost = 1 #May be changed
     try:
         h = int(r, 16)
         if h > 0xff:
             raise NotByteError
-        cost = 1 #May be changed
         if player.tokens < cost:
             raise TooFewTokens
     except ValueError:
-        pass #TODO: Interpret ASM instructions
+        words = r.decode().lower().replace(',', '').split()
+        toWrt = [None]
+        if words[0][:3] == 'mov':
+            toWrt[0] = OP_MOV
+        elif words[0][:3] == 'add':
+            toWrt[0] = OP_ADD
+        elif words[0][:3] == 'sub':
+            toWrt[0] = OP_SUB
+        elif words[0][:3] == 'cmp':
+            toWrt[0] = OP_CMP
+        if toWrt[0] is None:
+            isSmall =True
+            shift_word = OP_WORD_SHIFT_SMALL
+            shift_indirect_src = OP_INDIRECT_SHIFT_SMALL
+            shift_immediate_src = OP_IMMEDIATE_SHIFT_SMALL
+            if words[0][:3] == 'inc':
+                toWrt[0] = OP_INC
+            elif words[0][:3] == 'dec':
+                toWrt[0] = OP_DEC
+        else:
+            isSmall = False
+            shift_word = OP_WORD_SHIFT
+            shift_indirect_src = OP_INDIRECT_SHIFT_SRC
+            shift_immediate_src = OP_IMMEDIATE_SHIFT_SRC
+            shift_indirect_dst = OP_INDIRECT_SHIFT_DST
+            shift_register_dst = OP_REGISTER_SHIFT_DST
+        if toWrt[0] is not None:
+            if words[0][3:] == 'w':
+                toWrt[0] += shift_word
+                isWord = True
+            else:
+                isWord = False
+            src = words[1]
+            if src[0] == '*':
+                toWrt[0] += shift_indirect_src
+                src = src[1:]
+            if src[0] != 'r':
+                toWrt[0] += shift_immediate_src
+                im = int(src, 16)
+                if im > 0xffff:
+                    raise NotByteError
+                toWrt.append(im // 0x100)
+                toWrt.append(im % 0x100)
+            else:
+                reg = int(src[1], 16)
+                if reg > 0xff:
+                    raise NotByteError
+                toWrt.append(reg)
+            if not isSmall:
+                dst = words[2]
+                if dst[0] == '*':
+                    toWrt[0] += shift_indirect_dst
+                    dst = dst[1:]
+                if dst[0] == 'r':
+                    toWrt[0] += shift_register_dst
+                    reg = int(dst[1], 16)
+                    if reg > 0xff:
+                        raise NotByteError
+                    toWrt.append(reg)
+                else:
+                    im = int(dst, 16)
+                    if isWord:
+                        if im > 0xffff:
+                            raise NotByteError
+                        toWrt.append(im // 0x100)
+                        toWrt.append(im % 0x100)
+                    else:
+                        if im > 0xff:
+                            raise NotByteError
+                        toWrt.append(im)
+        else:
+            if words[0] == 'jmp':
+                toWrt[0] = OP_JMP
+            elif words[0] == 'je':
+                toWrt[0] = OP_JE
+            elif words[0] == 'jl':
+                toWrt[0] = OP_JL
+            elif words[0] == 'jg':
+                toWrt[0] = OP_JG
+            elif words[0] == 'jne':
+                toWrt[0] = OP_JNE
+            elif words[0] == 'jle':
+                toWrt[0] = OP_JLE
+            elif words[0] == 'jge':
+                toWrt[0] = OP_JGE
+            else:
+                raise UnknownInstruction
+            im = int(words[1], 16)
+            if im > 0xffff:
+                raise NotByteError
+            toWrt.append(im // 0x100)
+            toWrt.append(im % 0x100)
+        l = len(toWrt)
+        c = curs[0]*szBlock + curs[1]
+        if c+l > szBlock*szMem:
+            raise IndexError
+        calculatedCost = 0
+        for shift, m in enumerate(toWrt):
+            if mem[(c + shift) // szBlock][(c + shift) % szBlock] != m or \
+                player.mem[(c + shift) // szBlock][(c + shift) % szBlock].hidden:
+                    calculatedCost += cost
+        if calculatedCost > player.tokens:
+            raise TooFewTokens
+        player.tokens -= calculatedCost
+        for shift, m in enumerate(toWrt):
+            if mem[(c + shift) // szBlock][(c + shift) % szBlock] != m or \
+                player.mem[(c + shift) // szBlock][(c + shift) % szBlock].hidden:
+                mem[(c + shift) // szBlock][(c + shift) % szBlock] = m
+                player.mem[(c + shift) // szBlock][(c + shift) % szBlock].hidden = False
+                for i, pl in enumerate(players):
+                    pl.mem[(c + shift) // szBlock][(c + shift) % szBlock].im = True
+                    pl.mem[(c + shift) // szBlock][(c + shift) % szBlock].change = plId
+
     else:
         player.tokens -= cost
         mem[curs[0]][curs[1]] = h
