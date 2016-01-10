@@ -128,6 +128,20 @@ OP_JNE = 0x94
 OP_JLE = 0x95
 OP_JGE = 0x96
 
+OP_INC_R = 0xa0
+OP_INC_RP = 0xa1
+OP_INC_IP = 0xa2
+OP_INC_R2 = 0xa3
+OP_INC_RP2 = 0xa4
+OP_INC_IP2 = 0xa5
+
+OP_DEC_R = 0xb0
+OP_DEC_RP = 0xb1
+OP_DEC_IP = 0xb2
+OP_DEC_R2 = 0xb3
+OP_DEC_RP2 = 0xb4
+OP_DEC_IP2 = 0xb5
+
 szMem = 12
 szBlock = 64
 szReg = 8
@@ -594,6 +608,42 @@ def runByte(plId, ip):
     elif byte == OP_JGE:
         (jh, jl), mvIpTo = readBytes([], ip.pos, 2)
         mvIpTo = jmp(mvIpTo, jmpByte(ip.cmpBit, jh, jl, EQUAL | GREATER))
+    elif byte == OP_INC_R:
+        (r,), mvIpTo = readBytes([], ip.pos, 1)
+        movByte(r, DIRECT, 1, DIRECT | IMMEDIATE, add, plId)
+    elif byte == OP_INC_RP:
+        (r,), mvIpTo = readBytes([], ip.pos, 1)
+        movByte(r, 0, 1, DIRECT | IMMEDIATE, add, plId)
+    elif byte == OP_INC_IP:
+        (mh, ml), mvIpTo = readBytes([], ip.pos, 2)
+        movByte((mh, ml), IMMEDIATE, 1, DIRECT | IMMEDIATE, add, plId)
+    elif byte == OP_INC_R2:
+        (r,), mvIpTo = readBytes([], ip.pos, 1)
+        movByte(r, DIRECT, (0, 1), DIRECT | IMMEDIATE, add, plId, word=True)
+    elif byte == OP_INC_RP2:
+        (r,), mvIpTo = readBytes([], ip.pos, 1)
+        movByte(r, 0, (0, 1), DIRECT | IMMEDIATE, add, plId, word=True)
+    elif byte == OP_INC_IP2:
+        (mh, ml), mvIpTo = readBytes([], ip.pos, 2)
+        movByte((mh, ml), IMMEDIATE, (0, 1), DIRECT | IMMEDIATE, add, plId, word=True)
+    elif byte == OP_DEC_R:
+        (r,), mvIpTo = readBytes([], ip.pos, 1)
+        movByte(r, DIRECT, 1, DIRECT | IMMEDIATE, sub, plId)
+    elif byte == OP_DEC_RP:
+        (r,), mvIpTo = readBytes([], ip.pos, 1)
+        movByte(r, 0, 1, DIRECT | IMMEDIATE, sub, plId)
+    elif byte == OP_DEC_IP:
+        (mh, ml), mvIpTo = readBytes([], ip.pos, 2)
+        movByte((mh, ml), IMMEDIATE, 1, DIRECT | IMMEDIATE, sub, plId)
+    elif byte == OP_DEC_R2:
+        (r,), mvIpTo = readBytes([], ip.pos, 1)
+        movByte(r, DIRECT, (0, 1), DIRECT | IMMEDIATE, sub, plId, word=True)
+    elif byte == OP_DEC_RP2:
+        (r,), mvIpTo = readBytes([], ip.pos, 1)
+        movByte(r, 0, (0, 1), DIRECT | IMMEDIATE, sub, plId, word=True)
+    elif byte == OP_DEC_IP2:
+        (mh, ml), mvIpTo = readBytes([], ip.pos, 2)
+        movByte((mh, ml), IMMEDIATE, (0, 1), DIRECT | IMMEDIATE, sub, plId, word=True)
     else:
         return
     ip.pos = mvIpTo
