@@ -22,10 +22,10 @@ JMP = 0b111
 
 OP_WORD_SHIFT = 0x10
 OP_WORD_SHIFT_SMALL = 0x03
-OP_INDIRECT_SHIFT_SRC = 0x04
-OP_IMMEDIATE_SHIFT_SRC = 0x04
-OP_INDIRECT_SHIFT_DST = 0x02
-OP_REGISTER_SHIFT_DST = 0x01
+OP_INDIRECT_SHIFT_DST = 0x04
+OP_IMMEDIATE_SHIFT_DST = 0x04
+OP_INDIRECT_SHIFT_SRC = 0x02
+OP_REGISTER_SHIFT_SRC = 0x01
 OP_INDIRECT_SHIFT_SMALL = 0x01
 OP_IMMEDIATE_SHIFT_SMALL = 0x01
 
@@ -821,6 +821,7 @@ def turn(plId):
     player = players[plId]
     plMem = player.mem
     cy, cx = 0, 0
+    ax = 0
     attr = scr.inch(0,0)
     skipMvCursor = False
     while True:
@@ -829,8 +830,11 @@ def turn(plId):
             scr.chgat(cy, cx, 2, attr)
             cy, cx = memToScr[curs]
             cx -= 3
+            scr.addstr(ax, 3*maxCol+38, ' ')
+            ax = memToAsm[curs[1]]
         attr = scr.inch(cy, cx)
         scr.chgat(cy, cx, 2, curses.color_pair(CURS_COLOR))
+        scr.addstr(ax, 3*maxCol+38, '<')
         skipMvCursor = False
         scr.refresh()
 
@@ -839,24 +843,28 @@ def turn(plId):
             if curs[1]+1 == szBlock:
                 if curs[0]+1 != szMem:
                     player.curs = (curs[0]+1, 0)
+                    interpretBlock(player.curs[0], player)
             else:
                 player.curs = (curs[0], curs[1]+1)
         elif c == curses.KEY_LEFT:
             if curs[1] == 0:
                 if curs[0] != 0:
                     player.curs = (curs[0]-1, szBlock-1)
+                    interpretBlock(player.curs[0], player)
             else:
                 player.curs = (curs[0], curs[1]-1)
         elif c == curses.KEY_DOWN:
             if curs[1]+maxCol >= szBlock:
                 if curs[0]+1 != szMem:
                     player.curs = (curs[0]+1, maxCol-szBlock+curs[1])
+                    interpretBlock(player.curs[0], player)
             else:
                 player.curs = (curs[0], curs[1]+maxCol)
         elif c == curses.KEY_UP:
             if curs[1]-maxCol < 0:
                 if curs[0] != 0:
                     player.curs = (curs[0]-1, szBlock+curs[1]-maxCol)
+                    interpretBlock(player.curs[0], player)
             else:
                 player.curs = (curs[0], curs[1]-maxCol)
         elif c == KEY_ESC:
@@ -864,19 +872,327 @@ def turn(plId):
         elif c == ord('n'):
             return False
         elif c == KEY_ENTER:
-            scr.addstr(cmdyx[0], cmdyx[1], '> ')
+            scr.addstr(cmdyx[0]+4, cmdyx[1], '> ')
             curses.echo()
-            r = scr.getstr(cmdyx[0], cmdyx[1]+2)
+            curses.curs_set(1)
+            r = scr.getstr(cmdyx[0]+4, cmdyx[1]+2)
             try:
                 runCmd(r, curs, plId)
             except:
-                raise #TODO: Add some colourful err msg
+                pass #TODO: Add some colourful err msg
             printMem(plId)
             printUI(plId)
+            interpretBlock(player.curs[0], player)
             curses.noecho()
-            scr.addstr(cmdyx[0], cmdyx[1], '\n')
+            curses.curs_set(0)
+            scr.addstr(cmdyx[0]+4, cmdyx[1], '\n')
             scr.deleteln()
             skipMvCursor = True
+
+def interpretBlock(blId, player):
+    global memToAsm
+    memToAsm = dict()
+    shift = 0
+    for i in range(szBlock):
+        scr.addstr(3+i, maxCol*3+16, ' '*30)
+    scr.move(3, maxCol*3+16)
+    while True:
+        if shift >= szBlock:
+            return
+        scr.move(scr.getyx()[0], maxCol*3+40)
+        scr.addstr('%0#6x' % (blId*szBlock+shift))
+        scr.move(scr.getyx()[0], maxCol*3+16)
+        if player.mem[blId][shift].hidden:
+            scr.addstr('??')
+            memToAsm[shift] = scr.getyx()[0]
+            scr.move(scr.getyx()[0]+1, maxCol*3+16)
+            shift += 1
+            continue
+        byte = mem[blId][shift]
+        if byte == OP_MOV_R_I:
+            shift = interpretByte('mov', mem[blId], shift, dst=DIRECT, src=(DIRECT | IMMEDIATE))
+        elif byte == OP_MOV_R_I2:
+            shift = interpretByte('movw', mem[blId], shift, dst=DIRECT, src=(DIRECT | IMMEDIATE), word=True)
+        elif byte == OP_MOV_R_R:
+            shift = interpretByte('mov', mem[blId], shift, dst=DIRECT, src=DIRECT)
+        elif byte == OP_MOV_R_R2:
+            shift = interpretByte('movw', mem[blId], shift, dst=DIRECT, src=DIRECT, word=True)
+        elif byte == OP_MOV_R_IP:
+            shift = interpretByte('mov', mem[blId], shift, dst=DIRECT, src=IMMEDIATE)
+        elif byte == OP_MOV_R_IP2:
+            shift = interpretByte('movw', mem[blId], shift, dst=DIRECT, src=IMMEDIATE, word=True)
+        elif byte == OP_MOV_R_RP:
+            shift = interpretByte('mov', mem[blId], shift, dst=DIRECT, src=0)
+        elif byte == OP_MOV_R_RP2:
+            shift = interpretByte('movw', mem[blId], shift, dst=DIRECT, src=0, word=True)
+        elif byte == OP_MOV_RP_I:
+            shift = interpretByte('mov', mem[blId], shift, dst=0, src=(DIRECT | IMMEDIATE))
+        elif byte == OP_MOV_RP_I2:
+            shift = interpretByte('movw', mem[blId], shift, dst=0, src=(DIRECT | IMMEDIATE), word=True)
+        elif byte == OP_MOV_RP_R:
+            shift = interpretByte('mov', mem[blId], shift, dst=0, src=DIRECT)
+        elif byte == OP_MOV_RP_R2:
+            shift = interpretByte('movw', mem[blId], shift, dst=0, src=DIRECT, word=True)
+        elif byte == OP_MOV_RP_IP:
+            shift = interpretByte('mov', mem[blId], shift, dst=0, src=IMMEDIATE)
+        elif byte == OP_MOV_RP_IP2:
+            shift = interpretByte('movw', mem[blId], shift, dst=0, src=IMMEDIATE, word=True)
+        elif byte == OP_MOV_RP_RP:
+            shift = interpretByte('mov', mem[blId], shift, dst=0, src=0)
+        elif byte == OP_MOV_RP_RP2:
+            shift = interpretByte('movw', mem[blId], shift, dst=0, src=0, word=True)
+        elif byte == OP_MOV_IP_I:
+            shift = interpretByte('mov', mem[blId], shift, dst=IMMEDIATE, src=(DIRECT | IMMEDIATE))
+        elif byte == OP_MOV_IP_I2:
+            shift = interpretByte('movw', mem[blId], shift, dst=IMMEDIATE, src=(DIRECT | IMMEDIATE), word=True)
+        elif byte == OP_MOV_IP_R:
+            shift = interpretByte('mov', mem[blId], shift, dst=IMMEDIATE, src=DIRECT)
+        elif byte == OP_MOV_IP_R2:
+            shift = interpretByte('movw', mem[blId], shift, dst=IMMEDIATE, src=DIRECT, word=True)
+        elif byte == OP_MOV_IP_IP:
+            shift = interpretByte('mov', mem[blId], shift, dst=IMMEDIATE, src=IMMEDIATE)
+        elif byte == OP_MOV_IP_IP2:
+            shift = interpretByte('movw', mem[blId], shift, dst=IMMEDIATE, src=IMMEDIATE, word=True)
+        elif byte == OP_MOV_IP_RP:
+            shift = interpretByte('mov', mem[blId], shift, dst=IMMEDIATE, src=0)
+        elif byte == OP_MOV_IP_RP2:
+            shift = interpretByte('movw', mem[blId], shift, dst=IMMEDIATE, src=0, word=True)
+        elif byte == OP_ADD_R_I:
+            shift = interpretByte('add', mem[blId], shift, dst=DIRECT, src=(DIRECT | IMMEDIATE))
+        elif byte == OP_ADD_R_I2:
+            shift = interpretByte('addw', mem[blId], shift, dst=DIRECT, src=(DIRECT | IMMEDIATE), word=True)
+        elif byte == OP_ADD_R_R:
+            shift = interpretByte('add', mem[blId], shift, dst=DIRECT, src=DIRECT)
+        elif byte == OP_ADD_R_R2:
+            shift = interpretByte('addw', mem[blId], shift, dst=DIRECT, src=DIRECT, word=True)
+        elif byte == OP_ADD_R_IP:
+            shift = interpretByte('add', mem[blId], shift, dst=DIRECT, src=IMMEDIATE)
+        elif byte == OP_ADD_R_IP2:
+            shift = interpretByte('addw', mem[blId], shift, dst=DIRECT, src=IMMEDIATE, word=True)
+        elif byte == OP_ADD_R_RP:
+            shift = interpretByte('add', mem[blId], shift, dst=DIRECT, src=0)
+        elif byte == OP_ADD_R_RP2:
+            shift = interpretByte('addw', mem[blId], shift, dst=DIRECT, src=0, word=True)
+        elif byte == OP_ADD_RP_I:
+            shift = interpretByte('add', mem[blId], shift, dst=0, src=(DIRECT | IMMEDIATE))
+        elif byte == OP_ADD_RP_I2:
+            shift = interpretByte('addw', mem[blId], shift, dst=0, src=(DIRECT | IMMEDIATE), word=True)
+        elif byte == OP_ADD_RP_R:
+            shift = interpretByte('add', mem[blId], shift, dst=0, src=DIRECT)
+        elif byte == OP_ADD_RP_R2:
+            shift = interpretByte('addw', mem[blId], shift, dst=0, src=DIRECT, word=True)
+        elif byte == OP_ADD_RP_IP:
+            shift = interpretByte('add', mem[blId], shift, dst=0, src=IMMEDIATE)
+        elif byte == OP_ADD_RP_IP2:
+            shift = interpretByte('addw', mem[blId], shift, dst=0, src=IMMEDIATE, word=True)
+        elif byte == OP_ADD_RP_RP:
+            shift = interpretByte('add', mem[blId], shift, dst=0, src=0)
+        elif byte == OP_ADD_RP_RP2:
+            shift = interpretByte('addw', mem[blId], shift, dst=0, src=0, word=True)
+        elif byte == OP_ADD_IP_I:
+            shift = interpretByte('add', mem[blId], shift, dst=IMMEDIATE, src=(DIRECT | IMMEDIATE))
+        elif byte == OP_ADD_IP_I2:
+            shift = interpretByte('addw', mem[blId], shift, dst=IMMEDIATE, src=(DIRECT | IMMEDIATE), word=True)
+        elif byte == OP_ADD_IP_R:
+            shift = interpretByte('add', mem[blId], shift, dst=IMMEDIATE, src=DIRECT)
+        elif byte == OP_ADD_IP_R2:
+            shift = interpretByte('addw', mem[blId], shift, dst=IMMEDIATE, src=DIRECT, word=True)
+        elif byte == OP_ADD_IP_IP:
+            shift = interpretByte('add', mem[blId], shift, dst=IMMEDIATE, src=IMMEDIATE)
+        elif byte == OP_ADD_IP_IP2:
+            shift = interpretByte('addw', mem[blId], shift, dst=IMMEDIATE, src=IMMEDIATE, word=True)
+        elif byte == OP_ADD_IP_RP:
+            shift = interpretByte('add', mem[blId], shift, dst=IMMEDIATE, src=0)
+        elif byte == OP_ADD_IP_RP2:
+            shift = interpretByte('addw', mem[blId], shift, dst=IMMEDIATE, src=0, word=True)
+        elif byte == OP_SUB_R_I:
+            shift = interpretByte('sub', mem[blId], shift, dst=DIRECT, src=(DIRECT | IMMEDIATE))
+        elif byte == OP_SUB_R_I2:
+            shift = interpretByte('subw', mem[blId], shift, dst=DIRECT, src=(DIRECT | IMMEDIATE), word=True)
+        elif byte == OP_SUB_R_R:
+            shift = interpretByte('sub', mem[blId], shift, dst=DIRECT, src=DIRECT)
+        elif byte == OP_SUB_R_R2:
+            shift = interpretByte('subw', mem[blId], shift, dst=DIRECT, src=DIRECT, word=True)
+        elif byte == OP_SUB_R_IP:
+            shift = interpretByte('sub', mem[blId], shift, dst=DIRECT, src=IMMEDIATE)
+        elif byte == OP_SUB_R_IP2:
+            shift = interpretByte('subw', mem[blId], shift, dst=DIRECT, src=IMMEDIATE, word=True)
+        elif byte == OP_SUB_R_RP:
+            shift = interpretByte('sub', mem[blId], shift, dst=DIRECT, src=0)
+        elif byte == OP_SUB_R_RP2:
+            shift = interpretByte('subw', mem[blId], shift, dst=DIRECT, src=0, word=True)
+        elif byte == OP_SUB_RP_I:
+            shift = interpretByte('sub', mem[blId], shift, dst=0, src=(DIRECT | IMMEDIATE))
+        elif byte == OP_SUB_RP_I2:
+            shift = interpretByte('subw', mem[blId], shift, dst=0, src=(DIRECT | IMMEDIATE), word=True)
+        elif byte == OP_SUB_RP_R:
+            shift = interpretByte('sub', mem[blId], shift, dst=0, src=DIRECT)
+        elif byte == OP_SUB_RP_R2:
+            shift = interpretByte('subw', mem[blId], shift, dst=0, src=DIRECT, word=True)
+        elif byte == OP_SUB_RP_IP:
+            shift = interpretByte('sub', mem[blId], shift, dst=0, src=IMMEDIATE)
+        elif byte == OP_SUB_RP_IP2:
+            shift = interpretByte('subw', mem[blId], shift, dst=0, src=IMMEDIATE, word=True)
+        elif byte == OP_SUB_RP_RP:
+            shift = interpretByte('sub', mem[blId], shift, dst=0, src=0)
+        elif byte == OP_SUB_RP_RP2:
+            shift = interpretByte('subw', mem[blId], shift, dst=0, src=0, word=True)
+        elif byte == OP_SUB_IP_I:
+            shift = interpretByte('sub', mem[blId], shift, dst=IMMEDIATE, src=(DIRECT | IMMEDIATE))
+        elif byte == OP_SUB_IP_I2:
+            shift = interpretByte('subw', mem[blId], shift, dst=IMMEDIATE, src=(DIRECT | IMMEDIATE), word=True)
+        elif byte == OP_SUB_IP_R:
+            shift = interpretByte('sub', mem[blId], shift, dst=IMMEDIATE, src=DIRECT)
+        elif byte == OP_SUB_IP_R2:
+            shift = interpretByte('subw', mem[blId], shift, dst=IMMEDIATE, src=DIRECT, word=True)
+        elif byte == OP_SUB_IP_IP:
+            shift = interpretByte('sub', mem[blId], shift, dst=IMMEDIATE, src=IMMEDIATE)
+        elif byte == OP_SUB_IP_IP2:
+            shift = interpretByte('subw', mem[blId], shift, dst=IMMEDIATE, src=IMMEDIATE, word=True)
+        elif byte == OP_SUB_IP_RP:
+            shift = interpretByte('sub', mem[blId], shift, dst=IMMEDIATE, src=0)
+        elif byte == OP_SUB_IP_RP2:
+            shift = interpretByte('subw', mem[blId], shift, dst=IMMEDIATE, src=0, word=True)
+        elif byte == OP_CMP_R_I:
+            shift = interpretByte('cmp', mem[blId], shift, dst=DIRECT, src=(DIRECT | IMMEDIATE))
+        elif byte == OP_CMP_R_I2:
+            shift = interpretByte('cmpw', mem[blId], shift, dst=DIRECT, src=(DIRECT | IMMEDIATE), word=True)
+        elif byte == OP_CMP_R_R:
+            shift = interpretByte('cmp', mem[blId], shift, dst=DIRECT, src=DIRECT)
+        elif byte == OP_CMP_R_R2:
+            shift = interpretByte('cmpw', mem[blId], shift, dst=DIRECT, src=DIRECT, word=True)
+        elif byte == OP_CMP_R_IP:
+            shift = interpretByte('cmp', mem[blId], shift, dst=DIRECT, src=IMMEDIATE)
+        elif byte == OP_CMP_R_IP2:
+            shift = interpretByte('cmpw', mem[blId], shift, dst=DIRECT, src=IMMEDIATE, word=True)
+        elif byte == OP_CMP_R_RP:
+            shift = interpretByte('cmp', mem[blId], shift, dst=DIRECT, src=0)
+        elif byte == OP_CMP_R_RP2:
+            shift = interpretByte('cmpw', mem[blId], shift, dst=DIRECT, src=0, word=True)
+        elif byte == OP_CMP_RP_I:
+            shift = interpretByte('cmp', mem[blId], shift, dst=0, src=(DIRECT | IMMEDIATE))
+        elif byte == OP_CMP_RP_I2:
+            shift = interpretByte('cmpw', mem[blId], shift, dst=0, src=(DIRECT | IMMEDIATE), word=True)
+        elif byte == OP_CMP_RP_R:
+            shift = interpretByte('cmp', mem[blId], shift, dst=0, src=DIRECT)
+        elif byte == OP_CMP_RP_R2:
+            shift = interpretByte('cmpw', mem[blId], shift, dst=0, src=DIRECT, word=True)
+        elif byte == OP_CMP_RP_IP:
+            shift = interpretByte('cmp', mem[blId], shift, dst=0, src=IMMEDIATE)
+        elif byte == OP_CMP_RP_IP2:
+            shift = interpretByte('cmpw', mem[blId], shift, dst=0, src=IMMEDIATE, word=True)
+        elif byte == OP_CMP_RP_RP:
+            shift = interpretByte('cmp', mem[blId], shift, dst=0, src=0)
+        elif byte == OP_CMP_RP_RP2:
+            shift = interpretByte('cmpw', mem[blId], shift, dst=0, src=0, word=True)
+        elif byte == OP_CMP_IP_I:
+            shift = interpretByte('cmp', mem[blId], shift, dst=IMMEDIATE, src=(DIRECT | IMMEDIATE))
+        elif byte == OP_CMP_IP_I2:
+            shift = interpretByte('cmpw', mem[blId], shift, dst=IMMEDIATE, src=(DIRECT | IMMEDIATE), word=True)
+        elif byte == OP_CMP_IP_R:
+            shift = interpretByte('cmp', mem[blId], shift, dst=IMMEDIATE, src=DIRECT)
+        elif byte == OP_CMP_IP_R2:
+            shift = interpretByte('cmpw', mem[blId], shift, dst=IMMEDIATE, src=DIRECT, word=True)
+        elif byte == OP_CMP_IP_IP:
+            shift = interpretByte('cmp', mem[blId], shift, dst=IMMEDIATE, src=IMMEDIATE)
+        elif byte == OP_CMP_IP_IP2:
+            shift = interpretByte('cmpw', mem[blId], shift, dst=IMMEDIATE, src=IMMEDIATE, word=True)
+        elif byte == OP_CMP_IP_RP:
+            shift = interpretByte('cmp', mem[blId], shift, dst=IMMEDIATE, src=0)
+        elif byte == OP_CMP_IP_RP2:
+            shift = interpretByte('cmpw', mem[blId], shift, dst=IMMEDIATE, src=0, word=True)
+        elif byte == OP_JMP:
+            shift = interpretByte('jmp', mem[blId], shift, dst=IMMEDIATE)
+        elif byte == OP_JE:
+            shift = interpretByte('je', mem[blId], shift, dst=IMMEDIATE)
+        elif byte == OP_JL:
+            shift = interpretByte('jl', mem[blId], shift, dst=IMMEDIATE)
+        elif byte == OP_JG:
+            shift = interpretByte('jg', mem[blId], shift, dst=IMMEDIATE)
+        elif byte == OP_JNE:
+            shift = interpretByte('jne', mem[blId], shift, dst=IMMEDIATE)
+        elif byte == OP_JLE:
+            shift = interpretByte('jle', mem[blId], shift, dst=IMMEDIATE)
+        elif byte == OP_JGE:
+            shift = interpretByte('jge', mem[blId], shift, dst=IMMEDIATE)
+        elif byte == OP_INC_R:
+            shift = interpretByte('inc', mem[blId], shift, dst=DIRECT)
+        elif byte == OP_INC_RP:
+            shift = interpretByte('inc', mem[blId], shift, dst=0)
+        elif byte == OP_INC_IP:
+            shift = interpretByte('inc', mem[blId], shift, dst=IMMEDIATE)
+        elif byte == OP_INC_R2:
+            shift = interpretByte('incw', mem[blId], shift, dst=DIRECT, word=True)
+        elif byte == OP_INC_RP2:
+            shift = interpretByte('incw', mem[blId], shift, dst=0, word=True)
+        elif byte == OP_INC_IP2:
+            shift = interpretByte('incw', mem[blId], shift, dst=IMMEDIATE, word=True)
+        elif byte == OP_DEC_R:
+            shift = interpretByte('dec', mem[blId], shift, dst=DIRECT)
+        elif byte == OP_DEC_RP:
+            shift = interpretByte('dec', mem[blId], shift, dst=0)
+        elif byte == OP_DEC_IP:
+            shift = interpretByte('dec', mem[blId], shift, dst=IMMEDIATE)
+        elif byte == OP_DEC_R2:
+            shift = interpretByte('decw', mem[blId], shift, dst=DIRECT, word=True)
+        elif byte == OP_DEC_RP2:
+            shift = interpretByte('decw', mem[blId], shift, dst=0, word=True)
+        elif byte == OP_DEC_IP2:
+            shift = interpretByte('decw', mem[blId], shift, dst=IMMEDIATE, word=True)
+        else:
+            scr.addstr('%02x' % byte)
+            memToAsm[shift] = scr.getyx()[0]
+            scr.move(scr.getyx()[0]+1, maxCol*3+16)
+        shift += 1
+
+def interpretByte(instr, block, shift, dst=None, src=None, word=False):
+    memToAsm[shift] = scr.getyx()[0]
+    scr.addstr(instr+' ')
+    if dst is None:
+        scr.move(scr.getyx()[0]+1, maxCol*3+16)
+        return shift
+    else:
+        shift += 1
+        if shift == szBlock:
+            return shift
+        d = block[shift]
+        memToAsm[shift] = scr.getyx()[0]
+    if not (dst & DIRECT):
+        scr.addstr('*')
+    if dst & IMMEDIATE:
+        shift += 1
+        if shift == szBlock:
+            return shift
+        memToAsm[shift] = scr.getyx()[0]
+        scr.addstr('%0#6x' % (d*0x100 + block[shift]))
+    else:
+        scr.addstr('r%x' % d)
+
+    if src is None:
+        scr.move(scr.getyx()[0]+1, maxCol*3+16)
+        return shift
+    else:
+        shift += 1
+        if shift == szBlock:
+            return shift
+        memToAsm[shift] = scr.getyx()[0]
+        s = block[shift]
+        scr.addstr(', ')
+    if not (src & DIRECT):
+        scr.addstr('*')
+    if src & IMMEDIATE:
+        if word:
+            shift += 1
+            if shift == szBlock:
+                return shift
+            memToAsm[shift] = scr.getyx()[0]
+            scr.addstr('%0#6x' % (s*0x100 + block[shift]))
+        else:
+            scr.addstr('%0#4x' % s)
+    else:
+        scr.addstr('r%x' % s)
+    scr.move(scr.getyx()[0]+1, maxCol*3+16)
+    return shift
 
 def runCmd(r, curs, plId):
     player = players[plId]
@@ -899,10 +1215,10 @@ def runCmd(r, curs, plId):
         elif words[0][:3] == 'cmp':
             toWrt[0] = OP_CMP
         if toWrt[0] is None:
-            isSmall =True
+            isSmall = True
             shift_word = OP_WORD_SHIFT_SMALL
-            shift_indirect_src = OP_INDIRECT_SHIFT_SMALL
-            shift_immediate_src = OP_IMMEDIATE_SHIFT_SMALL
+            shift_indirect_dst = OP_INDIRECT_SHIFT_SMALL
+            shift_immediate_dst = OP_IMMEDIATE_SHIFT_SMALL
             if words[0][:3] == 'inc':
                 toWrt[0] = OP_INC
             elif words[0][:3] == 'dec':
@@ -910,45 +1226,47 @@ def runCmd(r, curs, plId):
         else:
             isSmall = False
             shift_word = OP_WORD_SHIFT
-            shift_indirect_src = OP_INDIRECT_SHIFT_SRC
-            shift_immediate_src = OP_IMMEDIATE_SHIFT_SRC
             shift_indirect_dst = OP_INDIRECT_SHIFT_DST
-            shift_register_dst = OP_REGISTER_SHIFT_DST
+            shift_immediate_dst = OP_IMMEDIATE_SHIFT_DST
+            shift_indirect_src = OP_INDIRECT_SHIFT_SRC
+            shift_register_src = OP_REGISTER_SHIFT_SRC
         if toWrt[0] is not None:
             if words[0][3:] == 'w':
                 toWrt[0] += shift_word
                 isWord = True
             else:
                 isWord = False
-            src = words[1]
-            if src[0] == '*':
-                toWrt[0] += shift_indirect_src
-                src = src[1:]
-            if src[0] != 'r':
-                toWrt[0] += shift_immediate_src
-                im = int(src, 16)
+            dst = words[1]
+            if dst[0] == '*':
+                toWrt[0] += shift_indirect_dst
+                dst = dst[1:]
+            elif dst[0] != 'r':
+                toWrt[0] += shift_indirect_dst
+            if dst[0] != 'r':
+                toWrt[0] += shift_immediate_dst
+                im = int(dst, 16)
                 if im > 0xffff:
                     raise NotByteError
                 toWrt.append(im // 0x100)
                 toWrt.append(im % 0x100)
             else:
-                reg = int(src[1], 16)
+                reg = int(dst[1], 16)
                 if reg > 0xff:
                     raise NotByteError
                 toWrt.append(reg)
             if not isSmall:
-                dst = words[2]
-                if dst[0] == '*':
-                    toWrt[0] += shift_indirect_dst
-                    dst = dst[1:]
-                if dst[0] == 'r':
-                    toWrt[0] += shift_register_dst
-                    reg = int(dst[1], 16)
+                src = words[2]
+                if src[0] == '*':
+                    toWrt[0] += shift_indirect_src
+                    src = src[1:]
+                if src[0] == 'r':
+                    toWrt[0] += shift_register_src
+                    reg = int(src[1], 16)
                     if reg > 0xff:
                         raise NotByteError
                     toWrt.append(reg)
                 else:
-                    im = int(dst, 16)
+                    im = int(src, 16)
                     if isWord:
                         if im > 0xffff:
                             raise NotByteError
@@ -975,7 +1293,7 @@ def runCmd(r, curs, plId):
                 toWrt[0] = OP_JGE
             else:
                 raise UnknownInstruction
-            im = int(words[1], 16)
+            im = int(words[1].replace('*', ''), 16)
             if im > 0xffff:
                 raise NotByteError
             toWrt.append(im // 0x100)
@@ -1014,6 +1332,7 @@ def main_loop():
         for i, player in enumerate(players):
             printMem(i)
             printUI(i)
+            interpretBlock(player.curs[0], player)
             if turn(i):
                 return
             for block in player.mem:
