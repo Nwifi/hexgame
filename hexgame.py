@@ -13,7 +13,10 @@ CURS_COLOR = 255
 KEY_ESC = 27
 KEY_ENTER = 10
 
-OP_MOV_R_I = 0x10 #TODO: Finish adding MOV/ADD WORD
+DIRECT = 0b01
+IMMEDIATE = 0b10
+
+OP_MOV_R_I = 0x10
 OP_MOV_R_R = 0x11
 OP_MOV_R_IP = 0x12
 OP_MOV_R_RP = 0x13
@@ -25,24 +28,68 @@ OP_MOV_IP_I = 0x18
 OP_MOV_IP_R = 0x19
 OP_MOV_IP_IP = 0x1a
 OP_MOV_IP_RP = 0x1b
-OP_MOV_R_I2 = 0x1c
-OP_MOV_RP_I2 = 0x1d
-OP_MOV_IP_I2 = 0x1e
-OP_ADD_R_I = 0x20
-OP_ADD_R_R = 0x21
-OP_ADD_R_IP = 0x22
-OP_ADD_R_RP = 0x23
-OP_ADD_RP_I = 0x24
-OP_ADD_RP_R = 0x25
-OP_ADD_RP_IP = 0x26
-OP_ADD_RP_RP = 0x27
-OP_ADD_IP_I = 0x28
-OP_ADD_IP_R = 0x29
-OP_ADD_IP_IP = 0x2a
-OP_ADD_IP_RP = 0x2b
-OP_ADD_R_I2 = 0x2c
-OP_ADD_RP_I2 = 0x2d
-OP_ADD_IP_I2 = 0x2e
+OP_MOV_R_I2 = 0x20
+OP_MOV_R_R2 = 0x21
+OP_MOV_R_IP2 = 0x22
+OP_MOV_R_RP2 = 0x23
+OP_MOV_RP_I2 = 0x24
+OP_MOV_RP_R2 = 0x25
+OP_MOV_RP_IP2 = 0x26
+OP_MOV_RP_RP2 = 0x27
+OP_MOV_IP_I2 = 0x28
+OP_MOV_IP_R2 = 0x29
+OP_MOV_IP_IP2 = 0x2a
+OP_MOV_IP_RP2 = 0x2b
+
+OP_ADD_R_I = 0x30
+OP_ADD_R_R = 0x31
+OP_ADD_R_IP = 0x32
+OP_ADD_R_RP = 0x33
+OP_ADD_RP_I = 0x34
+OP_ADD_RP_R = 0x35
+OP_ADD_RP_IP = 0x36
+OP_ADD_RP_RP = 0x37
+OP_ADD_IP_I = 0x38
+OP_ADD_IP_R = 0x39
+OP_ADD_IP_IP = 0x3a
+OP_ADD_IP_RP = 0x3b
+OP_ADD_R_I2 = 0x40
+OP_ADD_R_R2 = 0x41
+OP_ADD_R_IP2 = 0x42
+OP_ADD_R_RP2 = 0x43
+OP_ADD_RP_I2 = 0x44
+OP_ADD_RP_R2 = 0x45
+OP_ADD_RP_IP2 = 0x46
+OP_ADD_RP_RP2 = 0x47
+OP_ADD_IP_I2 = 0x48
+OP_ADD_IP_R2 = 0x49
+OP_ADD_IP_IP2 = 0x4a
+OP_ADD_IP_RP2 = 0x4b
+
+OP_SUB_R_I = 0x50
+OP_SUB_R_R = 0x51
+OP_SUB_R_IP = 0x52
+OP_SUB_R_RP = 0x53
+OP_SUB_RP_I = 0x54
+OP_SUB_RP_R = 0x55
+OP_SUB_RP_IP = 0x56
+OP_SUB_RP_RP = 0x57
+OP_SUB_IP_I = 0x58
+OP_SUB_IP_R = 0x59
+OP_SUB_IP_IP = 0x5a
+OP_SUB_IP_RP = 0x5b
+OP_SUB_R_I2 = 0x60
+OP_SUB_R_R2 = 0x61
+OP_SUB_R_IP2 = 0x62
+OP_SUB_R_RP2 = 0x63
+OP_SUB_RP_I2 = 0x64
+OP_SUB_RP_R2 = 0x65
+OP_SUB_RP_IP2 = 0x66
+OP_SUB_RP_RP2 = 0x67
+OP_SUB_IP_I2 = 0x68
+OP_SUB_IP_R2 = 0x69
+OP_SUB_IP_IP2 = 0x6a
+OP_SUB_IP_RP2 = 0x6b
 
 szMem = 12
 szBlock = 64
@@ -196,307 +243,228 @@ def runByte(plId, ip):
     player = players[plId]
     plMem = player.mem
     byte = mem[ip.pos[0]][ip.pos[1]]
-    if byte == OP_MOV_R_I: #MOV REG, IM
+    mov  = lambda x, y, mod: y
+    add = lambda x, y, mod: (x + y) % mod
+    sub = lambda x, y, mod: (x - y) % mod
+    if byte == OP_MOV_R_I:
         (r, im), mvIpTo = readBytes([], ip.pos, 2)
-        if r+1 >= szReg:
-            raise IpDeadError
-        regs[r] = im
-        ip.pos = mvIpTo
-    elif byte == OP_MOV_R_I2: #MOV REG, IM2
+        movByte(r, DIRECT, im, DIRECT | IMMEDIATE, mov, plId)
+    elif byte == OP_MOV_R_I2:
         (r, imh, iml), mvIpTo = readBytes([], ip.pos, 3)
-        if r+2 >= szReg:
-            raise IpDeadError
-        regs[r] = imh
-        regs[r+1] = iml
-        ip.pos = mvIpTo
-    elif byte == OP_MOV_R_R: #MOV REG, REG
+        movByte(r, DIRECT, (imh, iml), DIRECT | IMMEDIATE, mov, plId, word=True)
+    elif byte == OP_MOV_R_R:
         (r1, r2), mvIpTo = readBytes([], ip.pos, 2)
-        if r1+1 >= szReg or r2+1 >= szReg:
-            raise IpDeadError
-        regs[r1] = regs[r2]
-        ip.pos = mvIpTo
-    elif byte == OP_MOV_R_IP: #MOV REG, [IM]
+        movByte(r1, DIRECT, r2, DIRECT, mov, plId)
+    elif byte == OP_MOV_R_R2:
+        (r1, r2), mvIpTo = readBytes([], ip.pos, 2)
+        movByte(r1, DIRECT, r2, DIRECT, mov, plId, word=True)
+    elif byte == OP_MOV_R_IP:
         (r, mh, ml), mvIpTo = readBytes([], ip.pos, 3)
-        m = mh*0x100+ml
-        if r+1 >= szReg or m+1 >= szMem*szBlock:
-            raise IpDeadError
-        regs[r] = mem[m // szBlock][m % szBlock]
-        ip.pos = mvIpTo
-    elif byte == OP_MOV_R_RP: #MOV REG, [REG]
+        movByte(r, DIRECT, (mh, ml), IMMEDIATE, mov, plId)
+    elif byte == OP_MOV_R_IP2:
+        (r, mh, ml), mvIpTo = readBytes([], ip.pos, 3)
+        movByte(r, DIRECT, (mh, ml), IMMEDIATE, mov, plId, word=True)
+    elif byte == OP_MOV_R_RP:
         (r1, r2), mvIpTo = readBytes([], ip.pos, 2)
-        if r1+1 >= szReg or r2+2 >= szReg:
-            raise IpDeadError
-        m = regs[r2]*0x100+regs[r2+1]
-        if m+1 >= szMem*szBlock:
-            raise IpDeadError
-        regs[r1] = mem[m // szBlock][m % szBlock]
-        ip.pos = mvIpTo
-    elif byte == OP_MOV_RP_I: #MOV [REG], IM
+        movByte(r1, DIRECT, r2, 0, mov, plId)
+    elif byte == OP_MOV_R_RP2:
+        (r1, r2), mvIpTo = readBytes([], ip.pos, 2)
+        movByte(r1, DIRECT, r2, 0, mov, plId, word=True)
+    elif byte == OP_MOV_RP_I:
         (r, im), mvIpTo = readBytes([], ip.pos, 2)
-        if r+2 >= szReg:
-            raise IpDeadError
-        md = regs[r]*0x100+regs[r+1]
-        if md+1 >= szMem*szBlock:
-            raise IpDeadError
-        mem[md // szBlock][md % szBlock] = im
-        ip.pos = mvIpTo
-        for i, player in enumerate(players):
-            player.mem[md // szBlock][md % szBlock].change = plId
-    elif byte == OP_MOV_RP_I2: #MOV [REG], IM2
+        movByte(r, 0, im, DIRECT | IMMEDIATE, mov, plId)
+    elif byte == OP_MOV_RP_I2:
         (r, imh, iml), mvIpTo = readBytes([], ip.pos, 3)
-        if r+1 >= szReg:
-            raise IpDeadError
-        md = regs[r]*0x100+regs[r+1]
-        if md+2 >= szMem*szBlock:
-            raise IpDeadError
-        mem[md // szBlock][md % szBlock] = imh
-        mem[(md+1) // szBlock][md+1 % szBlock] = iml
-        ip.pos = mvIpTo
-        for i, player in enumerate(players):
-            player.mem[md // szBlock][md % szBlock].change = plId
-            player.mem[(md+1) // szBlock][md+1 % szBlock].change = plId
-    elif byte == OP_MOV_RP_R: #MOV [REG], REG
+        movByte(r, 0, (imh, iml), DIRECT | IMMEDIATE, mov, plId, word=True)
+    elif byte == OP_MOV_RP_R:
         (r1, r2), mvIpTo = readBytes([], ip.pos, 2)
-        if r1+2 >= szReg or r2+1 >= szReg:
-            raise IpDeadError
-        md = regs[r1]*0x100+regs[r1+1]
-        if md+1 >= szMem*szBlock:
-            raise IpDeadError
-        mem[md // szBlock][md % szBlock] = regs[r2]
-        ip.pos = mvIpTo
-        for i, player in enumerate(players):
-            player.mem[md // szBlock][md % szBlock].change = plId
-    elif byte == OP_MOV_RP_IP: #MOV [REG], [IM]
+        movByte(r1, 0, r2, DIRECT, mov, plId)
+    elif byte == OP_MOV_RP_R2:
+        (r1, r2), mvIpTo = readBytes([], ip.pos, 2)
+        movByte(r1, 0, r2, DIRECT, mov, plId, word=True)
+    elif byte == OP_MOV_RP_IP:
         (r, mh, ml), mvIpTo = readBytes([], ip.pos, 3)
-        m = mh*0x100+ml
-        if r+2 >= szReg or m+1 >= szMem*szBlock:
-            raise IpDeadError
-        md = regs[r]*0x100+regs[r+1]
-        if md+1 >= szMem*szBlock:
-            raise IpDeadError
-        mem[md // szBlock][md % szBlock] = mem[m // szBlock][m % szBlock]
-        ip.pos = mvIpTo
-        for i, player in enumerate(players):
-            player.mem[md // szBlock][md % szBlock].change = plId
-    elif byte == OP_MOV_RP_RP: #MOV [REG], [REG]
+        movByte(r, 0, (mh, ml), IMMEDIATE, mov, plId)
+    elif byte == OP_MOV_RP_IP2:
+        (r, mh, ml), mvIpTo = readBytes([], ip.pos, 3)
+        movByte(r, 0, (mh, ml), IMMEDIATE, mov, plId, word=True)
+    elif byte == OP_MOV_RP_RP:
         (r1, r2), mvIpTo = readBytes([], ip.pos, 2)
-        if r1+2 >= szReg or r2+2 >= szReg:
-            raise IpDeadError
-        md1 = regs[r1]*0x100+regs[r1+1]
-        md2 = regs[r2]*0x100+regs[r2+1]
-        if md1+1 >= szMem*szBlock or md2+1 >= szMem*szBlock:
-            raise IpDeadError
-        mem[md1 // szBlock][md1 % szBlock] = mem[md2 // szBlock][md2 % szBlock]
-        ip.pos = mvIpTo
-        for i, player in enumerate(players):
-            player.mem[md1 // szBlock][md1 % szBlock].change = plId
-    elif byte == OP_MOV_IP_I: #MOV [IM], IM
+        movByte(r1, 0, r2, 0, mov, plId)
+    elif byte == OP_MOV_RP_RP2:
+        (r1, r2), mvIpTo = readBytes([], ip.pos, 2)
+        movByte(r1, 0, r2, 0, mov, plId, word=True)
+    elif byte == OP_MOV_IP_I:
         (mh, ml, im), mvIpTo = readBytes([], ip.pos, 3)
-        m = mh*0x100+ml
-        if m+1 >= szMem*szBlock:
-            raise IpDeadError
-        mem[m // szBlock][m % szBlock] = im
-        ip.pos = mvIpTo
-        for i, player in enumerate(players):
-            player.mem[m // szBlock][m % szBlock].change = plId
-    elif byte == OP_MOV_IP_I2: #MOV [IM], IM2
+        movByte((mh, ml), IMMEDIATE, im, DIRECT | IMMEDIATE, mov, plId)
+    elif byte == OP_MOV_IP_I2:
         (mh, ml, imh, iml), mvIpTo = readBytes([], ip.pos, 4)
-        m = mh*0x100+ml
-        if m+2 >= szMem*szBlock:
-            raise IpDeadError
-        mem[m // szBlock][m % szBlock] = imh
-        mem[(m+1) // szBlock][m+1 % szBlock] = iml
-        ip.pos = mvIpTo
-        for i, player in enumerate(players):
-            player.mem[m // szBlock][m % szBlock].change = plId
-            player.mem[(m+1) // szBlock][m+1 % szBlock].change = plId
-    elif byte == OP_MOV_IP_R: #MOV [IM], REG
+        movByte((mh, ml), IMMEDIATE, (imh, iml), DIRECT | IMMEDIATE, mov, plId, word=True)
+    elif byte == OP_MOV_IP_R:
         (mh, ml, r), mvIpTo = readBytes([], ip.pos, 3)
-        m = mh*0x100+ml
-        if r+1 >= szReg or m+1 >= szMem*szBlock:
-            raise IpDeadError
-        mem[m // szBlock][m % szBlock] = regs[r]
-        ip.pos = mvIpTo
-        for i, player in enumerate(players):
-            player.mem[m // szBlock][m % szBlock].change = plId
-    elif byte == OP_MOV_IP_IP: #MOV [IM], [IM]
+        movByte((mh, ml), IMMEDIATE, r, DIRECT, mov, plId)
+    elif byte == OP_MOV_IP_R2:
+        (mh, ml, r), mvIpTo = readBytes([], ip.pos, 3)
+        movByte((mh, ml), IMMEDIATE, r, DIRECT, mov, plId, word=True)
+    elif byte == OP_MOV_IP_IP:
         (mh1, ml1, mh2, ml2), mvIpTo = readBytes([], ip.pos, 4)
-        m1 = mh1*0x100+ml1
-        m2 = mh2*0x100+ml2
-        if m1+1 >= szMem*szBlock or m2+1 >= szMem*szBlock:
-            raise IpDeadError
-        mem[m1 // szBlock][m1 % szBlock] = mem[m2 // szBlock][m2 % szBlock]
-        ip.pos = mvIpTo
-        for i, player in enumerate(players):
-            player.mem[m1 // szBlock][m1 % szBlock].change = plId
-    elif byte == OP_MOV_IP_RP: #MOV [IM], [REG]
+        movByte((mh1, ml1), IMMEDIATE, (mh2, ml2), IMMEDIATE, mov, plId)
+    elif byte == OP_MOV_IP_IP2:
+        (mh1, ml1, mh2, ml2), mvIpTo = readBytes([], ip.pos, 4)
+        movByte((mh1, ml1), IMMEDIATE, (mh2, ml2), IMMEDIATE, mov, plId, word=True)
+    elif byte == OP_MOV_IP_RP:
         (mh, ml, r), mvIpTo = readBytes([], ip.pos, 3)
-        m = mh*0x100+ml
-        if r+2 >= szReg or m+1 >= szMem*szBlock:
-            raise IpDeadError
-        md = regs[r]*0x100+regs[r+1]
-        if md+1 >= szMem*szBlock:
-            raise IpDeadError
-        mem[m // szBlock][m % szBlock] = mem[md // szBlock][md % szBlock]
-        ip.pos = mvIpTo
-        for i, player in enumerate(players):
-            player.mem[m // szBlock][m % szBlock].change = plId
-    elif byte == OP_ADD_R_I: #ADD REG, IM
+        movByte((mh, ml), IMMEDIATE, r, 0, mov, plId)
+    elif byte == OP_MOV_IP_RP2:
+        (mh, ml, r), mvIpTo = readBytes([], ip.pos, 3)
+        movByte((mh, ml), IMMEDIATE, r, 0, mov, plId, word=True)
+    elif byte == OP_ADD_R_I:
         (r, im), mvIpTo = readBytes([], ip.pos, 2)
-        if r+1 >= szReg:
-            raise IpDeadError
-        regs[r] = (regs[r] + im) % 0xff
-        ip.pos = mvIpTo
-    elif byte == OP_ADD_R_I2: #ADD REG, IM2
+        movByte(r, DIRECT, im, DIRECT | IMMEDIATE, add, plId)
+    elif byte == OP_ADD_R_I2:
         (r, imh, iml), mvIpTo = readBytes([], ip.pos, 3)
-        if r+2 >= szReg:
-            raise IpDeadError
-        im = imh*0x100+iml
-        rs = regs[r]*0x100+regs[r+1]
-        s = (rs + im) % 0xffff
-        regs[r] = s // 0x100
-        regs[r+1] = s % 0x100
-        ip.pos = mvIpTo
-    elif byte == OP_ADD_R_R: #ADD REG, REG
+        movByte(r, DIRECT, (imh, iml), DIRECT | IMMEDIATE, add, plId, word=True)
+    elif byte == OP_ADD_R_R:
         (r1, r2), mvIpTo = readBytes([], ip.pos, 2)
-        if r1+1 >= szReg or r2+1 >= szReg:
-            raise IpDeadError
-        regs[r1] = (regs[r1] + regs[r2]) % 0xff
-        ip.pos = mvIpTo
-    elif byte == OP_ADD_R_IP: #ADD REG, [IM]
+        movByte(r1, DIRECT, r2, DIRECT, add, plId)
+    elif byte == OP_ADD_R_R2:
+        (r1, r2), mvIpTo = readBytes([], ip.pos, 2)
+        movByte(r1, DIRECT, r2, DIRECT, add, plId, word=True)
+    elif byte == OP_ADD_R_IP:
         (r, mh, ml), mvIpTo = readBytes([], ip.pos, 3)
-        m = mh*0x100+ml
-        if r+1 >= szReg or m+1 >= szMem*szBlock:
-            raise IpDeadError
-        regs[r] = (regs[r] + mem[m // szBlock][m % szBlock]) % 0xff
-        ip.pos = mvIpTo
-    elif byte == OP_ADD_R_RP: #ADD REG, [REG]
+        movByte(r, DIRECT, (mh, ml), IMMEDIATE, add, plId)
+    elif byte == OP_ADD_R_IP2:
+        (r, mh, ml), mvIpTo = readBytes([], ip.pos, 3)
+        movByte(r, DIRECT, (mh, ml), IMMEDIATE, add, plId, word=True)
+    elif byte == OP_ADD_R_RP:
         (r1, r2), mvIpTo = readBytes([], ip.pos, 2)
-        if r1+1 >= szReg or r2+2 >= szReg:
-            raise IpDeadError
-        m = regs[r2]*0x100+regs[r2+1]
-        if m+1 >= szMem*szBlock:
-            raise IpDeadError
-        regs[r1] = (regs[r1] + mem[m // szBlock][m % szBlock]) % 0xff
-        ip.pos = mvIpTo
-    elif byte == OP_ADD_RP_I: #ADD [REG], IM
+        movByte(r1, DIRECT, r2, 0, add, plId)
+    elif byte == OP_ADD_R_RP2:
+        (r1, r2), mvIpTo = readBytes([], ip.pos, 2)
+        movByte(r1, DIRECT, r2, 0, add, plId, word=True)
+    elif byte == OP_ADD_RP_I:
         (r, im), mvIpTo = readBytes([], ip.pos, 2)
-        if r+2 >= szReg:
-            raise IpDeadError
-        md = regs[r]*0x100+regs[r+1]
-        if md+1 >= szMem*szBlock:
-            raise IpDeadError
-        mem[md // szBlock][md % szBlock] = (mem[md // szBlock][md % szBlock] + im) % 0xff
-        ip.pos = mvIpTo
-        for i, player in enumerate(players):
-            player.mem[md // szBlock][md % szBlock].change = plId
-    elif byte == OP_ADD_RP_I2: #ADD [REG], IM2
+        movByte(r, 0, im, DIRECT | IMMEDIATE, add, plId)
+    elif byte == OP_ADD_RP_I2:
         (r, imh, iml), mvIpTo = readBytes([], ip.pos, 3)
-        if r+1 >= szReg:
-            raise IpDeadError
-        md = regs[r]*0x100+regs[r+1]
-        if md+2 >= szMem*szBlock:
-            raise IpDeadError
-        im = imh*0x100 + iml
-        ms = mem[md // szBlock][md % szBlock]*0x100 + mem[(md+1) // szBlock][md+1 % szBlock]
-        s = (im + ms) % 0xffff
-        mem[md // szBlock][md % szBlock] = s // 0x100
-        mem[(md+1) // szBlock][md+1 % szBlock] = s % 0x100
-        ip.pos = mvIpTo
-        for i, player in enumerate(players):
-            player.mem[md // szBlock][md % szBlock].change = plId
-            player.mem[(md+1) // szBlock][md+1 % szBlock].change = plId
-    elif byte == OP_ADD_RP_R: #ADD [REG], REG
+        movByte(r, 0, (imh, iml), DIRECT | IMMEDIATE, add, plId, word=True)
+    elif byte == OP_ADD_RP_R:
         (r1, r2), mvIpTo = readBytes([], ip.pos, 2)
-        if r1+2 >= szReg or r2+1 >= szReg:
-            raise IpDeadError
-        md = regs[r1]*0x100+regs[r1+1]
-        if md+1 >= szMem*szBlock:
-            raise IpDeadError
-        mem[md // szBlock][md % szBlock] = (mem[md // szBlock][md % szBlock] + regs[r2]) % 0xff
-        ip.pos = mvIpTo
-        for i, player in enumerate(players):
-            player.mem[md // szBlock][md % szBlock].change = plId
-    elif byte == OP_ADD_RP_IP: #ADD [REG], [IM]
+        movByte(r1, 0, r2, DIRECT, add, plId)
+    elif byte == OP_ADD_RP_R2:
+        (r1, r2), mvIpTo = readBytes([], ip.pos, 2)
+        movByte(r1, 0, r2, DIRECT, add, plId, word=True)
+    elif byte == OP_ADD_RP_IP:
         (r, mh, ml), mvIpTo = readBytes([], ip.pos, 3)
-        m = mh*0x100+ml
-        if r+2 >= szReg or m+1 >= szMem*szBlock:
-            raise IpDeadError
-        md = regs[r]*0x100+regs[r+1]
-        if md+1 >= szMem*szBlock:
-            raise IpDeadError
-        mem[md // szBlock][md % szBlock] = (mem[md // szBlock][md % szBlock] + mem[m // szBlock][m % szBlock]) % 0xff
-        ip.pos = mvIpTo
-        for i, player in enumerate(players):
-            player.mem[md // szBlock][md % szBlock].change = plId
-    elif byte == OP_ADD_RP_RP: #ADD [REG], [REG]
+        movByte(r, 0, (mh, ml), IMMEDIATE, add, plId)
+    elif byte == OP_ADD_RP_IP2:
+        (r, mh, ml), mvIpTo = readBytes([], ip.pos, 3)
+        movByte(r, 0, (mh, ml), IMMEDIATE, add, plId, word=True)
+    elif byte == OP_ADD_RP_RP:
         (r1, r2), mvIpTo = readBytes([], ip.pos, 2)
-        if r1+2 >= szReg or r2+2 >= szReg:
-            raise IpDeadError
-        md1 = regs[r1]*0x100+regs[r1+1]
-        md2 = regs[r2]*0x100+regs[r2+1]
-        if md1+1 >= szMem*szBlock or md2+1 >= szMem*szBlock:
-            raise IpDeadError
-        mem[md1 // szBlock][md1 % szBlock] = (mem[md1 // szBlock][md1 % szBlock] + mem[md2 // szBlock][md2 % szBlock]) % 0xff
-        ip.pos = mvIpTo
-        for i, player in enumerate(players):
-            player.mem[md1 // szBlock][md1 % szBlock].change = plId
-    elif byte == OP_ADD_IP_I: #ADD [IM], IM
+        movByte(r1, 0, r2, 0, add, plId)
+    elif byte == OP_ADD_RP_RP2:
+        (r1, r2), mvIpTo = readBytes([], ip.pos, 2)
+        movByte(r1, 0, r2, 0, add, plId, word=True)
+    elif byte == OP_ADD_IP_I:
         (mh, ml, im), mvIpTo = readBytes([], ip.pos, 3)
-        m = mh*0x100+ml
-        if m+1 >= szMem*szBlock:
-            raise IpDeadError
-        mem[m // szBlock][m % szBlock] = (mem[m // szBlock][m % szBlock] + im) % 0xff
-        ip.pos = mvIpTo
-        for i, player in enumerate(players):
-            player.mem[m // szBlock][m % szBlock].change = plId
-    elif byte == OP_ADD_IP_I2: #ADD [IM], IM2
+        movByte((mh, ml), IMMEDIATE, im, DIRECT | IMMEDIATE, add, plId)
+    elif byte == OP_ADD_IP_I2:
         (mh, ml, imh, iml), mvIpTo = readBytes([], ip.pos, 4)
-        m = mh*0x100+ml
-        if m+2 >= szMem*szBlock:
-            raise IpDeadError
-        im = imh*0x100 + iml
-        md = mem[m // szBlock][m % szBlock]*0x100 + mem[(m+1) // szBlock][m+1 % szBlock]
-        s = (im + md) % 0xffff
-        mem[m // szBlock][m % szBlock] = s // 0x100
-        mem[(m+1) // szBlock][m+1 % szBlock] = s % 0x100
-        ip.pos = mvIpTo
-        for i, player in enumerate(players):
-            player.mem[m // szBlock][m % szBlock].change = plId
-            player.mem[(m+1) // szBlock][m+1 % szBlock].change = plId
-    elif byte == OP_ADD_IP_R: #ADD [IM], REG
+        movByte((mh, ml), IMMEDIATE, (imh, iml), DIRECT | IMMEDIATE, add, plId, word=True)
+    elif byte == OP_ADD_IP_R:
         (mh, ml, r), mvIpTo = readBytes([], ip.pos, 3)
-        m = mh*0x100+ml
-        if r+1 >= szReg or m+1 >= szMem*szBlock:
-            raise IpDeadError
-        mem[m // szBlock][m % szBlock] = (mem[m // szBlock][m % szBlock] + regs[r]) % 0xff
-        ip.pos = mvIpTo
-        for i, player in enumerate(players):
-            player.mem[m // szBlock][m % szBlock].change = plId
-    elif byte == OP_ADD_IP_IP: #ADD [IM], [IM]
+        movByte((mh, ml), IMMEDIATE, r, DIRECT, add, plId)
+    elif byte == OP_ADD_IP_R2:
+        (mh, ml, r), mvIpTo = readBytes([], ip.pos, 3)
+        movByte((mh, ml), IMMEDIATE, r, DIRECT, add, plId, word=True)
+    elif byte == OP_ADD_IP_IP:
         (mh1, ml1, mh2, ml2), mvIpTo = readBytes([], ip.pos, 4)
-        m1 = mh1*0x100+ml1
-        m2 = mh2*0x100+ml2
-        if m1+1 >= szMem*szBlock or m2+1 >= szMem*szBlock:
-            raise IpDeadError
-        mem[m1 // szBlock][m1 % szBlock] = (mem[m1 // szBlock][m1 % szBlock] + mem[m2 // szBlock][m2 % szBlock]) % 0xff
-        ip.pos = mvIpTo
-        for i, player in enumerate(players):
-            player.mem[m1 // szBlock][m1 % szBlock].change = plId
-    elif byte == OP_ADD_IP_RP: #ADD [IM], [REG]
+        movByte((mh1, ml1), IMMEDIATE, (mh2, ml2), IMMEDIATE, add, plId)
+    elif byte == OP_ADD_IP_IP2:
+        (mh1, ml1, mh2, ml2), mvIpTo = readBytes([], ip.pos, 4)
+        movByte((mh1, ml1), IMMEDIATE, (mh2, ml2), IMMEDIATE, add, plId, word=True)
+    elif byte == OP_ADD_IP_RP:
         (mh, ml, r), mvIpTo = readBytes([], ip.pos, 3)
-        m = mh*0x100+ml
-        if r+2 >= szReg or m+1 >= szMem*szBlock:
-            raise IpDeadError
-        md = regs[r]*0x100+regs[r+1]
-        if md+1 >= szMem*szBlock:
-            raise IpDeadError
-        mem[m // szBlock][m % szBlock] = (mem[m // szBlock][m % szBlock] + mem[md // szBlock][md % szBlock]) % 0xff
-        ip.pos = mvIpTo
-        for i, player in enumerate(players):
-            player.mem[m // szBlock][m % szBlock].change = plId
+        movByte((mh, ml), IMMEDIATE, r, 0, add, plId)
+    elif byte == OP_ADD_IP_RP2:
+        (mh, ml, r), mvIpTo = readBytes([], ip.pos, 3)
+        movByte((mh, ml), IMMEDIATE, r, 0, add, plId, word=True)
+    elif byte == OP_SUB_R_I:
+        (r, im), mvIpTo = readBytes([], ip.pos, 2)
+        movByte(r, DIRECT, im, DIRECT | IMMEDIATE, sub, plId)
+    elif byte == OP_SUB_R_I2:
+        (r, imh, iml), mvIpTo = readBytes([], ip.pos, 3)
+        movByte(r, DIRECT, (imh, iml), DIRECT | IMMEDIATE, sub, plId, word=True)
+    elif byte == OP_SUB_R_R:
+        (r1, r2), mvIpTo = readBytes([], ip.pos, 2)
+        movByte(r1, DIRECT, r2, DIRECT, sub, plId)
+    elif byte == OP_SUB_R_R2:
+        (r1, r2), mvIpTo = readBytes([], ip.pos, 2)
+        movByte(r1, DIRECT, r2, DIRECT, sub, plId, word=True)
+    elif byte == OP_SUB_R_IP:
+        (r, mh, ml), mvIpTo = readBytes([], ip.pos, 3)
+        movByte(r, DIRECT, (mh, ml), IMMEDIATE, sub, plId)
+    elif byte == OP_SUB_R_IP2:
+        (r, mh, ml), mvIpTo = readBytes([], ip.pos, 3)
+        movByte(r, DIRECT, (mh, ml), IMMEDIATE, sub, plId, word=True)
+    elif byte == OP_SUB_R_RP:
+        (r1, r2), mvIpTo = readBytes([], ip.pos, 2)
+        movByte(r1, DIRECT, r2, 0, sub, plId)
+    elif byte == OP_SUB_R_RP2:
+        (r1, r2), mvIpTo = readBytes([], ip.pos, 2)
+        movByte(r1, DIRECT, r2, 0, sub, plId, word=True)
+    elif byte == OP_SUB_RP_I:
+        (r, im), mvIpTo = readBytes([], ip.pos, 2)
+        movByte(r, 0, im, DIRECT | IMMEDIATE, sub, plId)
+    elif byte == OP_SUB_RP_I2:
+        (r, imh, iml), mvIpTo = readBytes([], ip.pos, 3)
+        movByte(r, 0, (imh, iml), DIRECT | IMMEDIATE, sub, plId, word=True)
+    elif byte == OP_SUB_RP_R:
+        (r1, r2), mvIpTo = readBytes([], ip.pos, 2)
+        movByte(r1, 0, r2, DIRECT, sub, plId)
+    elif byte == OP_SUB_RP_R2:
+        (r1, r2), mvIpTo = readBytes([], ip.pos, 2)
+        movByte(r1, 0, r2, DIRECT, sub, plId, word=True)
+    elif byte == OP_SUB_RP_IP:
+        (r, mh, ml), mvIpTo = readBytes([], ip.pos, 3)
+        movByte(r, 0, (mh, ml), IMMEDIATE, sub, plId)
+    elif byte == OP_SUB_RP_IP2:
+        (r, mh, ml), mvIpTo = readBytes([], ip.pos, 3)
+        movByte(r, 0, (mh, ml), IMMEDIATE, sub, plId, word=True)
+    elif byte == OP_SUB_RP_RP:
+        (r1, r2), mvIpTo = readBytes([], ip.pos, 2)
+        movByte(r1, 0, r2, 0, sub, plId)
+    elif byte == OP_SUB_RP_RP2:
+        (r1, r2), mvIpTo = readBytes([], ip.pos, 2)
+        movByte(r1, 0, r2, 0, sub, plId, word=True)
+    elif byte == OP_SUB_IP_I:
+        (mh, ml, im), mvIpTo = readBytes([], ip.pos, 3)
+        movByte((mh, ml), IMMEDIATE, im, DIRECT | IMMEDIATE, sub, plId)
+    elif byte == OP_SUB_IP_I2:
+        (mh, ml, imh, iml), mvIpTo = readBytes([], ip.pos, 4)
+        movByte((mh, ml), IMMEDIATE, (imh, iml), DIRECT | IMMEDIATE, sub, plId, word=True)
+    elif byte == OP_SUB_IP_R:
+        (mh, ml, r), mvIpTo = readBytes([], ip.pos, 3)
+        movByte((mh, ml), IMMEDIATE, r, DIRECT, sub, plId)
+    elif byte == OP_SUB_IP_R2:
+        (mh, ml, r), mvIpTo = readBytes([], ip.pos, 3)
+        movByte((mh, ml), IMMEDIATE, r, DIRECT, sub, plId, word=True)
+    elif byte == OP_SUB_IP_IP:
+        (mh1, ml1, mh2, ml2), mvIpTo = readBytes([], ip.pos, 4)
+        movByte((mh1, ml1), IMMEDIATE, (mh2, ml2), IMMEDIATE, sub, plId)
+    elif byte == OP_SUB_IP_IP2:
+        (mh1, ml1, mh2, ml2), mvIpTo = readBytes([], ip.pos, 4)
+        movByte((mh1, ml1), IMMEDIATE, (mh2, ml2), IMMEDIATE, sub, plId, word=True)
+    elif byte == OP_SUB_IP_RP:
+        (mh, ml, r), mvIpTo = readBytes([], ip.pos, 3)
+        movByte((mh, ml), IMMEDIATE, r, 0, sub, plId)
+    elif byte == OP_SUB_IP_RP2:
+        (mh, ml, r), mvIpTo = readBytes([], ip.pos, 3)
+        movByte((mh, ml), IMMEDIATE, r, 0, sub, plId, word=True)
     else:
-        pass
+        return
+    ip.pos = mvIpTo
 
 def readBytes(b, pos, n):
     if pos[1]+1 == szBlock:
@@ -510,6 +478,85 @@ def readBytes(b, pos, n):
     if n == 0:
         return b, pos
     return readBytes(b, pos, n)
+
+
+def movByte(dst, dmode, src, smode, op, plId, word=False):
+    if word:
+        if smode & DIRECT:
+            if smode & IMMEDIATE:
+                s = src[0]*0x100 + src[1]
+            else:
+                if src+2 >= szReg:
+                    raise IpDeadError
+                s = regs[src]*0x100 + regs[src+1]
+        else:
+            if smode & IMMEDIATE:
+                m = src[0]*0x100 + src[1]
+            else:
+                if src+2 >= szReg:
+                    raise IpDeadError
+                m = regs[src]*0x100 + regs[src+1]
+            if m+2 >= szBlock*szMem:
+                raise IpDeadError
+            s = mem[m // szBlock][m % szBlock]*0x100 + mem[(m+1) // szBlock][m+1 % szBlock]
+        if dmode & DIRECT: #Must be REG
+            if dst+2 >= szReg:
+                raise IpDeadError
+            d = regs[dst]*0x100 + regs[dst+1]
+            o = op(d, s, 0x10000)
+            regs[dst] = o // 0x100
+            regs[dst+1] = o % 0x100
+        else:
+            if dmode & IMMEDIATE:
+                m = dst[0]*0x100 + dst[1]
+            else:
+                if dst+2 >= szReg:
+                    raise IpDeadError
+                m = regs[dst]*0x100 + regs[dst+1]
+            if m+2 >= szBlock*szMem:
+                raise IpDeadError
+            d = mem[m // szBlock][m % szBlock]*0x100 + mem[(m+1) // szBlock][m+1 % szBlock]
+            o = op(d, s, 0x10000)
+            mem[m // szBlock][m % szBlock] = o // 0x100
+            mem[(m+1) // szBlock][m+1 % szBlock] = o % 0x100
+            for i, player in enumerate(players):
+                player.mem[m // szBlock][m % szBlock].change = plId
+                player.mem[(m+1) // szBlock][m+1 % szBlock].change = plId
+    else:
+        if smode & DIRECT:
+            if smode & IMMEDIATE:
+                s = src
+            else:
+                if src+1 >= szReg:
+                    raise IpDeadError
+                s = regs[src]
+        else:
+            if smode & IMMEDIATE:
+                m = src[0]*0x100 + src[1]
+            else:
+                if src+2 >= szReg:
+                    raise IpDeadError
+                m = regs[src]*0x100 + regs[src+1]
+            if m+1 >= szBlock*szMem:
+                raise IpDeadError
+            s = mem[m // szBlock][m % szBlock]
+        if dmode & DIRECT: #Must be REG
+            if dst+1 >= szReg:
+                raise IpDeadError
+            regs[dst] = op(regs[dst], s, 0x100)
+        else:
+            if dmode & IMMEDIATE:
+                m = dst[0]*0x100 + dst[1]
+            else:
+                if dst+2 >= szReg:
+                    raise IpDeadError
+                m = regs[dst]*0x100 + regs[dst+1]
+            if m+1 >= szBlock*szMem:
+                raise IpDeadError
+            mem[m // szBlock][m % szBlock] = op(mem[m // szBlock][m % szBlock], s, 0x100)
+            for i, player in enumerate(players):
+                player.mem[m // szBlock][m % szBlock].change = plId
+
 
 def turn(plId):
     player = players[plId]
