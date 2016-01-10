@@ -15,6 +15,10 @@ KEY_ENTER = 10
 
 DIRECT = 0b01
 IMMEDIATE = 0b10
+LESS = 0b001
+EQUAL = 0b010
+GREATER = 0b100
+JMP = 0b111
 
 OP_MOV_R_I = 0x10
 OP_MOV_R_R = 0x11
@@ -91,6 +95,39 @@ OP_SUB_IP_R2 = 0x69
 OP_SUB_IP_IP2 = 0x6a
 OP_SUB_IP_RP2 = 0x6b
 
+OP_CMP_R_I = 0x70
+OP_CMP_R_R = 0x71
+OP_CMP_R_IP = 0x72
+OP_CMP_R_RP = 0x73
+OP_CMP_RP_I = 0x74
+OP_CMP_RP_R = 0x75
+OP_CMP_RP_IP = 0x76
+OP_CMP_RP_RP = 0x77
+OP_CMP_IP_I = 0x78
+OP_CMP_IP_R = 0x79
+OP_CMP_IP_IP = 0x7a
+OP_CMP_IP_RP = 0x7b
+OP_CMP_R_I2 = 0x80
+OP_CMP_R_R2 = 0x81
+OP_CMP_R_IP2 = 0x82
+OP_CMP_R_RP2 = 0x83
+OP_CMP_RP_I2 = 0x84
+OP_CMP_RP_R2 = 0x85
+OP_CMP_RP_IP2 = 0x86
+OP_CMP_RP_RP2 = 0x87
+OP_CMP_IP_I2 = 0x88
+OP_CMP_IP_R2 = 0x89
+OP_CMP_IP_IP2 = 0x8a
+OP_CMP_IP_RP2 = 0x8b
+
+OP_JMP = 0x90
+OP_JE = 0x91
+OP_JL = 0x92
+OP_JG = 0x93
+OP_JNE = 0x94
+OP_JLE = 0x95
+OP_JGE = 0x96
+
 szMem = 12
 szBlock = 64
 szReg = 8
@@ -123,6 +160,7 @@ class Ip:
     def __init__(self, pos, owner):
         self.owner = owner
         self.pos = pos
+        self.cmpBit = 1
 
 class Byte:
     def __init__(self):
@@ -246,6 +284,7 @@ def runByte(plId, ip):
     mov  = lambda x, y, mod: y
     add = lambda x, y, mod: (x + y) % mod
     sub = lambda x, y, mod: (x - y) % mod
+    jmp = lambda o, j: o if j is None else j
     if byte == OP_MOV_R_I:
         (r, im), mvIpTo = readBytes([], ip.pos, 2)
         movByte(r, DIRECT, im, DIRECT | IMMEDIATE, mov, plId)
@@ -462,6 +501,99 @@ def runByte(plId, ip):
     elif byte == OP_SUB_IP_RP2:
         (mh, ml, r), mvIpTo = readBytes([], ip.pos, 3)
         movByte((mh, ml), IMMEDIATE, r, 0, sub, plId, word=True)
+    elif byte == OP_CMP_R_I:
+        (r, im), mvIpTo = readBytes([], ip.pos, 2)
+        ip.cmpBit = cmpByte(r, DIRECT, im, DIRECT | IMMEDIATE)
+    elif byte == OP_CMP_R_I2:
+        (r, imh, iml), mvIpTo = readBytes([], ip.pos, 3)
+        ip.cmpBit = cmpByte(r, DIRECT, (imh, iml), DIRECT | IMMEDIATE, word=True)
+    elif byte == OP_CMP_R_R:
+        (r1, r2), mvIpTo = readBytes([], ip.pos, 2)
+        ip.cmpBit = cmpByte(r1, DIRECT, r2, DIRECT)
+    elif byte == OP_CMP_R_R2:
+        (r1, r2), mvIpTo = readBytes([], ip.pos, 2)
+        ip.cmpBit = cmpByte(r1, DIRECT, r2, DIRECT, word=True)
+    elif byte == OP_CMP_R_IP:
+        (r, mh, ml), mvIpTo = readBytes([], ip.pos, 3)
+        ip.cmpBit = cmpByte(r, DIRECT, (mh, ml), IMMEDIATE)
+    elif byte == OP_CMP_R_IP2:
+        (r, mh, ml), mvIpTo = readBytes([], ip.pos, 3)
+        ip.cmpBit = cmpByte(r, DIRECT, (mh, ml), IMMEDIATE, word=True)
+    elif byte == OP_CMP_R_RP:
+        (r1, r2), mvIpTo = readBytes([], ip.pos, 2)
+        ip.cmpBit = cmpByte(r1, DIRECT, r2, 0)
+    elif byte == OP_CMP_R_RP2:
+        (r1, r2), mvIpTo = readBytes([], ip.pos, 2)
+        ip.cmpBit = cmpByte(r1, DIRECT, r2, 0, word=True)
+    elif byte == OP_CMP_RP_I:
+        (r, im), mvIpTo = readBytes([], ip.pos, 2)
+        ip.cmpBit = cmpByte(r, 0, im, DIRECT | IMMEDIATE)
+    elif byte == OP_CMP_RP_I2:
+        (r, imh, iml), mvIpTo = readBytes([], ip.pos, 3)
+        ip.cmpBit = cmpByte(r, 0, (imh, iml), DIRECT | IMMEDIATE, word=True)
+    elif byte == OP_CMP_RP_R:
+        (r1, r2), mvIpTo = readBytes([], ip.pos, 2)
+        ip.cmpBit = cmpByte(r1, 0, r2, DIRECT)
+    elif byte == OP_CMP_RP_R2:
+        (r1, r2), mvIpTo = readBytes([], ip.pos, 2)
+        ip.cmpBit = cmpByte(r1, 0, r2, DIRECT, word=True)
+    elif byte == OP_CMP_RP_IP:
+        (r, mh, ml), mvIpTo = readBytes([], ip.pos, 3)
+        ip.cmpBit = cmpByte(r, 0, (mh, ml), IMMEDIATE)
+    elif byte == OP_CMP_RP_IP2:
+        (r, mh, ml), mvIpTo = readBytes([], ip.pos, 3)
+        ip.cmpBit = cmpByte(r, 0, (mh, ml), IMMEDIATE, word=True)
+    elif byte == OP_CMP_RP_RP:
+        (r1, r2), mvIpTo = readBytes([], ip.pos, 2)
+        ip.cmpBit = cmpByte(r1, 0, r2, 0)
+    elif byte == OP_CMP_RP_RP2:
+        (r1, r2), mvIpTo = readBytes([], ip.pos, 2)
+        ip.cmpBit = cmpByte(r1, 0, r2, 0, word=True)
+    elif byte == OP_CMP_IP_I:
+        (mh, ml, im), mvIpTo = readBytes([], ip.pos, 3)
+        ip.cmpBit = cmpByte((mh, ml), IMMEDIATE, im, DIRECT | IMMEDIATE)
+    elif byte == OP_CMP_IP_I2:
+        (mh, ml, imh, iml), mvIpTo = readBytes([], ip.pos, 4)
+        ip.cmpBit = cmpByte((mh, ml), IMMEDIATE, (imh, iml), DIRECT | IMMEDIATE, word=True)
+    elif byte == OP_CMP_IP_R:
+        (mh, ml, r), mvIpTo = readBytes([], ip.pos, 3)
+        ip.cmpBit = cmpByte((mh, ml), IMMEDIATE, r, DIRECT)
+    elif byte == OP_CMP_IP_R2:
+        (mh, ml, r), mvIpTo = readBytes([], ip.pos, 3)
+        ip.cmpBit = cmpByte((mh, ml), IMMEDIATE, r, DIRECT, word=True)
+    elif byte == OP_CMP_IP_IP:
+        (mh1, ml1, mh2, ml2), mvIpTo = readBytes([], ip.pos, 4)
+        ip.cmpBit = cmpByte((mh1, ml1), IMMEDIATE, (mh2, ml2), IMMEDIATE)
+    elif byte == OP_CMP_IP_IP2:
+        (mh1, ml1, mh2, ml2), mvIpTo = readBytes([], ip.pos, 4)
+        ip.cmpBit = cmpByte((mh1, ml1), IMMEDIATE, (mh2, ml2), IMMEDIATE, word=True)
+    elif byte == OP_CMP_IP_RP:
+        (mh, ml, r), mvIpTo = readBytes([], ip.pos, 3)
+        ip.cmpBit = cmpByte((mh, ml), IMMEDIATE, r, 0)
+    elif byte == OP_CMP_IP_RP2:
+        (mh, ml, r), mvIpTo = readBytes([], ip.pos, 3)
+        ip.cmpBit = cmpByte((mh, ml), IMMEDIATE, r, 0, word=True)
+    elif byte == OP_JMP:
+        (jh, jl), mvIpTo = readBytes([], ip.pos, 2)
+        mvIpTo = jmp(mvIpTo, jmpByte(ip.cmpBit, jh, jl, JMP))
+    elif byte == OP_JE:
+        (jh, jl), mvIpTo = readBytes([], ip.pos, 2)
+        mvIpTo = jmp(mvIpTo, jmpByte(ip.cmpBit, jh, jl, EQUAL))
+    elif byte == OP_JL:
+        (jh, jl), mvIpTo = readBytes([], ip.pos, 2)
+        mvIpTo = jmp(mvIpTo, jmpByte(ip.cmpBit, jh, jl, LESS))
+    elif byte == OP_JG:
+        (jh, jl), mvIpTo = readBytes([], ip.pos, 2)
+        mvIpTo = jmp(mvIpTo, jmpByte(ip.cmpBit, jh, jl, GREATER))
+    elif byte == OP_JNE:
+        (jh, jl), mvIpTo = readBytes([], ip.pos, 2)
+        mvIpTo = jmp(mvIpTo, jmpByte(ip.cmpBit, jh, jl, ~EQUAL))
+    elif byte == OP_JLE:
+        (jh, jl), mvIpTo = readBytes([], ip.pos, 2)
+        mvIpTo = jmp(mvIpTo, jmpByte(ip.cmpBit, jh, jl, EQUAL | LESS))
+    elif byte == OP_JGE:
+        (jh, jl), mvIpTo = readBytes([], ip.pos, 2)
+        mvIpTo = jmp(mvIpTo, jmpByte(ip.cmpBit, jh, jl, EQUAL | GREATER))
     else:
         return
     ip.pos = mvIpTo
@@ -478,7 +610,6 @@ def readBytes(b, pos, n):
     if n == 0:
         return b, pos
     return readBytes(b, pos, n)
-
 
 def movByte(dst, dmode, src, smode, op, plId, word=False):
     if word:
@@ -557,6 +688,61 @@ def movByte(dst, dmode, src, smode, op, plId, word=False):
             for i, player in enumerate(players):
                 player.mem[m // szBlock][m % szBlock].change = plId
 
+def cmpByte(dst, dmode, src, smode, word=False):
+    c = [None, None]
+    if word:
+        for i, (p, mode) in enumerate(((dst, dmode), (src, smode))):
+            if mode & DIRECT:
+                if mode & IMMEDIATE:
+                    c[i] = p[0]*0x100 + p[1]
+                else:
+                    if p+2 >= szReg:
+                        raise IpDeadError
+                    c[i] = regs[p]*0x100 + regs[p+1]
+            else:
+                if mode & IMMEDIATE:
+                    m = p[0]*0x100 + p[1]
+                else:
+                    if p+2 >= szReg:
+                        raise IpDeadError
+                    m = regs[p]*0x100 + regs[p+1]
+                if m+2 >= szBlock*szMem:
+                    raise IpDeadError
+                c[i] = mem[m // szBlock][m % szBlock]*0x100 + mem[(m+1) // szBlock][m+1 % szBlock]
+    else:
+        for i, (p, mode) in enumerate(((dst, dmode), (src, smode))):
+            if mode & DIRECT:
+                if mode & IMMEDIATE:
+                    c[i] = p
+                else:
+                    if p+1 >= szReg:
+                        raise IpDeadError
+                    c[i] = regs[p]
+            else:
+                if mode & IMMEDIATE:
+                    m = p[0]*0x100 + p[1]
+                else:
+                    if p+2 >= szReg:
+                        raise IpDeadError
+                    m = regs[p]*0x100 + regs[p+1]
+                if m+1 >= szBlock*szMem:
+                    raise IpDeadError
+                c[i] = mem[m // szBlock][m % szBlock]
+    if c[0] > c[1]:
+        return GREATER
+    elif c[0] < c[1]:
+        return LESS
+    else:
+        return EQUAL
+
+def jmpByte(cmpBit, jh, jl, flags):
+    j = jh*0x100 + jl - 1
+    if j+1 >= szBlock*szMem:
+        raise IpDeadError
+    if cmpBit & flags:
+        return (j // szBlock, j % szBlock)
+    else:
+        return None
 
 def turn(plId):
     player = players[plId]
@@ -646,6 +832,7 @@ def main_loop():
             if turn(i):
                 return
             for block in player.mem:
+                block.hidden = True
                 for byte in block:
                     byte.reset()
             player.tokens = nTokens
